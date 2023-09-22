@@ -1,5 +1,6 @@
 #pragma once
 #include <iostream>
+#include <array>
 #include "Utils.cpp"
 #include "Offsets.cpp"
 #include "Memory.cpp"

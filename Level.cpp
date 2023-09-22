@@ -19,15 +19,17 @@ public:
     }
     bool isPlayable()
     {
-        if (getName().empty())
+        auto name = getName();
+        if (name.empty())
             return false;
-        if (getName().compare("mp_lobby") == 0)
+        if (name.compare("mp_lobby") == 0)
             return false;
         return true;
     }
     bool isTrainingArea()
     {
-        if (getName().compare("mp_rr_canyonlands_staging") == 0)
+        auto name = getName();
+        if (name.compare("mp_rr_canyonlands_staging_mu1") == 0)
             return true;
         return false;
     }

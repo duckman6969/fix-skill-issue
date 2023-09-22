@@ -7,6 +7,11 @@
 #include <cctype>
 #include <locale>
 #include <iterator>
+#include <chrono>
+#include <thread>
+#include <random>
+
+static std::minstd_rand RandomGenerator { std::random_device()() };
 
 namespace utils
 {
@@ -58,5 +63,21 @@ namespace utils
         bool b;
         is >> std::boolalpha >> b;
         return b;
+    }
+
+    int randomInt(int minValue, int maxValue) {
+        return std::uniform_int_distribution<int>(minValue, maxValue)(RandomGenerator);
+    }
+
+    float randomFloat(float minValue, float maxValue) {
+        return std::uniform_real_distribution<float>(minValue, maxValue)(RandomGenerator);
+    }
+
+    void randomSleep(int minSleep, int maxSleep) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(randomInt(minSleep, maxSleep)));
+    }
+
+    void clearScreen() {
+        printf("\e[H\e[2J\e[3J");
     }
 }

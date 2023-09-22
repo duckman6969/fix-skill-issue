@@ -1,8 +1,11 @@
 #pragma once
 #include <iostream>
 #include <sstream>
+#include <fstream>
+#include <filesystem>
 #include <sys/uio.h>
 #include <math.h>
+namespace fs = std::filesystem;
 
 namespace mem
 {
@@ -12,13 +15,21 @@ namespace mem
     {
         if (m_pid > 0)
             return m_pid;
-        char buf[512];
-        FILE *cmd_pipe = popen("pidof -s r5apex.exe", "r");
-        fgets(buf, 512, cmd_pipe);
-        pid_t pid = strtoul(buf, NULL, 10);
-        pclose(cmd_pipe);
-        m_pid = pid;
-        return pid;
+        for (const auto& entry : fs::directory_iterator("/proc"))
+        {
+            if (!entry.is_directory())
+                continue;
+              std::ifstream cmdFile(std::string(entry.path()) + "/cmdline");
+              std::string cmdLine;
+              std::getline(cmdFile, cmdLine);
+              if (cmdLine.find("r5apex.exe") != std::string::npos)
+              {
+                  m_pid = std::stoi(entry.path().filename());
+                  break;
+              }
+
+        }
+        return m_pid;
     }
     bool Read(long address, void *pBuff, size_t size)
     {
@@ -26,8 +37,8 @@ namespace mem
             return false;
         void *pAddress = (void *)address;
         pid_t pid = GetPID();
-        struct iovec iovLocalAddressSpace[1]{0};
-        struct iovec iovRemoteAddressSpace[1]{0};
+        struct iovec iovLocalAddressSpace[1]{};
+        struct iovec iovRemoteAddressSpace[1]{};
         iovLocalAddressSpace[0].iov_base = pBuff;     // Store data in this buffer
         iovLocalAddressSpace[0].iov_len = size;       // which has this size.
         iovRemoteAddressSpace[0].iov_base = pAddress; // The data comes from here
@@ -51,8 +62,8 @@ namespace mem
             return false;
         void *pAddress = (void *)address;
         pid_t pid = GetPID();
-        struct iovec iovLocalAddressSpace[1]{0};
-        struct iovec iovRemoteAddressSpace[1]{0};
+        struct iovec iovLocalAddressSpace[1]{};
+        struct iovec iovRemoteAddressSpace[1]{};
         iovLocalAddressSpace[0].iov_base = pBuff;     // Store data in this buffer
         iovLocalAddressSpace[0].iov_len = size;       // which has this size.
         iovRemoteAddressSpace[0].iov_base = pAddress; // The data will be writted here
@@ -72,86 +83,73 @@ namespace mem
     }
     std::string ReadString(long address)
     {
-        int size = sizeof(std::string);
+        constexpr int size = 32;
         char buffer[size] = {0};
         bool success = Read(address, &buffer, size);
         if (!success)
-            throw new std::invalid_argument("Failed to read String at address: " + address);
+        {
+            m_pid = 0;
+            throw std::invalid_argument("Failed to get str at: " + std::to_string(address));
+        }
         return std::string(buffer);
     }
-    short ReadShort(long address)
+    template <class T>
+    T Read(long address)
     {
-        int size = sizeof(short);
-        short buffer;
-        bool success = Read(address, &buffer, size);
+        T buffer;
+        bool success = Read(address, &buffer, sizeof(T));
         if (!success)
-            throw new std::invalid_argument("Failed to read short at address: " + address);
+        {
+            m_pid = 0;
+            throw std::invalid_argument(
+                "Failed to get " + std::to_string(sizeof(T)) + "at: " + std::to_string(address));
+        }
         return buffer;
     }
-    void WriteShort(long address, short num)
+    template <class T>
+    void Write(long address, T value)
     {
-        int size = sizeof(short);
-        short buffer = num;
-        bool success = Write(address, &buffer, size);
+        bool success = Write(address, &value, sizeof(T));
         if (!success)
-            throw new std::invalid_argument("Failed to write short at address: " + address);
+        {
+            m_pid = 0;
+            throw std::invalid_argument(
+                "Failed to set " + std::to_string(sizeof(T)) + " at: " + std::to_string(address));
+        }
     }
-    int ReadInt(long address)
+    void readByteArray(long address, char* buffer, int size)
     {
-        int size = sizeof(int);
-        int buffer;
-        bool success = Read(address, &buffer, size);
-        if (!success)
-            throw new std::invalid_argument("Failed to read int at address: " + address);
-        return buffer;
-    }
-    void WriteInt(long address, int num)
-    {
-        int size = sizeof(int);
-        int buffer = num;
-        bool success = Write(address, &buffer, size);
-        if (!success)
-            throw new std::invalid_argument("Failed to write int at address: " + address);
-    }
-    float ReadFloat(long address)
-    {
-        int size = sizeof(float);
-        float buffer;
-        bool success = Read(address, &buffer, size);
-        if (!success)
-            throw new std::invalid_argument("Failed to read float at address: " + address);
-        return buffer;
-    }
-    void WriteFloat(long address, float num)
-    {
-        int size = sizeof(float);
-        float buffer = num;
-        bool success = Write(address, &buffer, size);
-        if (!success)
-            throw new std::invalid_argument("Failed to write float at address: " + address);
-    }
-    long ReadLong(long address)
-    {
-        int size = sizeof(long);
-        long buffer;
-        bool success = Read(address, &buffer, size);
-        if (!success)
-            throw new std::invalid_argument("Failed to read long at address: " + address);
-        return buffer;
-    }
-    void WriteLong(long address, long num)
-    {
-        int size = sizeof(long);
-        long buffer = num;
-        bool success = Write(address, &buffer, size);
-        if (!success)
-            throw new std::invalid_argument("Failed to write long at address: " + address);
+    	for (int i = 0; i < size; i++)
+        {
+    	    bool success = Read((long)(address + (long)i), &(buffer[i]), sizeof(char));
+            if (!success)
+                throw std::invalid_argument("Failed to get arr at: " + std::to_string(address));
+    	}
     }
     std::string convertPointerToHexString(long pointer)
     {
         std::stringstream stream;
         stream << "0x" << std::hex << pointer;
         std::string result(stream.str());
+        return result;
+    }
+    std::string getClassName(long entity_ptr)
+    {
+        char buffer[32];
+        // Read the ClientClass's network name for to given entity
+        long client_network_vtable = mem::Read<long>(entity_ptr + 3 * 8);
+        long get_client_entity = mem::Read<long>(client_network_vtable + 3 * 8);
+        int offset = mem::Read<int>(get_client_entity + 3);
+        long network_name_ptr = mem::Read<long>(get_client_entity + offset + 7 + 16);
+        mem::readByteArray(network_name_ptr, buffer, 32);
+        std::string result;
+        // Return up to 32 chars from the network name
+        size_t len = 0;
+        for (; len < 32; ++len) {
+            if (buffer[len] == '\0')
+                break;
+        }
+        result.assign(buffer, len);
         return result;
     }
 }
